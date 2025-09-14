@@ -15,9 +15,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from src.db import init_db, load_seen_ids_db, save_scraped_data_db
 
-init_db()
-seen_ids = load_seen_ids_db()
-
 # ---- Function 1: Date calculation ----
 def get_date_10_days_before(date_str: str, date_format: str = "%d/%m/%Y") -> str:
     """Return a date string that is 10 days before the given date."""
@@ -39,7 +36,7 @@ def setup_selenium(download_dir: str):
 
     chrome_options = Options()
     prefs = {
-        "download.default_directory": download_dir,
+        "download.default_directory": os.path.abspath(download_dir),
         "download.prompt_for_download": False,
         "download.directory_upgrade": True,
         "plugins.always_open_pdf_externally": True
@@ -79,6 +76,7 @@ def open_and_prepare_page(driver, from_date: str, to_date: str) -> str:
     # Select 'Reportable Judgement'
     reportable_judgement = wait.until(EC.presence_of_element_located((By.ID, "rpjudgeA")))
     reportable_judgement.click()
+    time.sleep(2)
 
     # Capture captcha image
     captcha_img = wait.until(EC.presence_of_element_located((By.ID, "captcha")))
@@ -105,7 +103,7 @@ def submit_captcha_and_search(driver, captcha_text: str):
 
 
 # ---- Function 3: Scrape judgments ----
-def scrape_results_table(driver, pdfs_dir = "pdfs", seen_ids = seen_ids) -> List[Dict]:
+def scrape_results_table(driver, pdfs_dir = "pdfs", seen_ids = None) -> List[Dict]:
     """ 
     Scrape all rows from the results table.
     Returns a list of dicts with case details.
@@ -115,10 +113,10 @@ def scrape_results_table(driver, pdfs_dir = "pdfs", seen_ids = seen_ids) -> List
     scraped_data = []
     if seen_ids is None:
         seen_ids = set()
+        print("No seen_ids found, creating new set.")
 
     while True:
         try:
-            # Wait for table
             table = wait.until(EC.presence_of_element_located((By.ID, "sample_1")))
             rows = table.find_elements(By.CSS_SELECTOR, "tbody tr")
 
@@ -163,11 +161,9 @@ def scrape_results_table(driver, pdfs_dir = "pdfs", seen_ids = seen_ids) -> List
     return scraped_data
 
 
-# ---- Function 4: Download PDFs ----
 
-
-# ---- Function 5: Save CSV ----
-def save_data_to_csv(data: List[Dict], logs_dir: str = "logs") -> str:
+# ---- Function 4: Save CSV ----
+def save_data_to_csv(data: List[Dict], csv_dir: str = "CSVs") -> str:
     """
     Save scraped data to CSV in logs folder.
     Returns the path to the saved CSV, or an empty string if no data.
@@ -176,10 +172,10 @@ def save_data_to_csv(data: List[Dict], logs_dir: str = "logs") -> str:
         print("No data to save. Skipping CSV creation.")
         return ""
 
-    os.makedirs(logs_dir, exist_ok=True)
+    os.makedirs(csv_dir, exist_ok=True)
     scrape_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     csv_filename = f"judgments_{scrape_date}.csv"
-    csv_path = os.path.join(logs_dir, csv_filename)
+    csv_path = os.path.join(csv_dir, csv_filename)
 
     # Add scrape_date to each row
     for row in data:

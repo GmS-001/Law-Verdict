@@ -2,71 +2,78 @@ import streamlit as st
 from datetime import datetime
 from src.scraper import (
     get_date_10_days_before,
+    open_and_prepare_page,
     scrape_results_table,
     setup_selenium,
-    submit_captcha_and_search
+    submit_captcha_and_search,
+    save_data_to_csv
 )
 from src.db import init_db, load_seen_ids_db, save_scraped_data_db
-import time
-from PIL import Image
+import os
 
 st.set_page_config(page_title="Law & Verdict Scraper")
 st.title("📄 Law & Verdict PDF Scraper")
+PDF_DIR = "PDFs"
+CSV_DIR = "CSVs"
+# --- Initialize DB and Session State ---
+init_db()
+if 'stage' not in st.session_state:
+    st.session_state.stage = 'initial'
+if 'driver' not in st.session_state:
+    st.session_state.driver = None
+if 'captcha_path' not in st.session_state:
+    st.session_state.captcha_path = None
 
-# --- Step 1: Date input ---
-from_date = st.date_input("Select From Date", value=datetime.today())
+# --- UI LOGIC BASED ON STAGE ---
 
-# --- Step 2: Radio button selection ---
-option = st.radio("Reportable Judgment", ["Yes", "No", "All"])
+if st.session_state.stage == 'initial':
+    to_date = st.date_input("Select Date", value=datetime.today())
+    from_date = get_date_10_days_before(to_date.strftime("%d/%m/%Y"))
+    st.info(f"Scraping from **{from_date}** to **{to_date.strftime('%d/%m/%Y')}**")
+    option = st.radio("Reportable Judgment", ["Yes", "No", "All"])
+    if st.button("Go to Website and Get CAPTCHA"):
+        with st.spinner("Opening website..."):
+            st.session_state.driver = setup_selenium(download_dir=PDF_DIR)
+            st.session_state.captcha_path = open_and_prepare_page(
+                st.session_state.driver, from_date, to_date.strftime("%d/%m/%Y")
+            )
+            st.session_state.stage = 'captcha_input'
+            st.rerun()
 
-if st.button("Go to Website") :
-    # Placeholder for CAPTCHA image
-    captcha_placeholder = st.empty()
-    captcha_input = st.text_input("Enter CAPTCHA", "")
+elif st.session_state.stage == 'captcha_input':
+    st.image(st.session_state.captcha_path, caption="Enter CAPTCHA shown in the browser")
+    
+    with st.form("captcha_form"):
+        captcha_text = st.text_input("Enter CAPTCHA text")
+        submit_button = st.form_submit_button("Extract Judgments")
 
-    # --- Step 3: Extract button ---
-    if st.button("Extract"):
-        if not captcha_input.strip():
-            st.error("Please enter the CAPTCHA.")
-        else:
-            st.info("Scraping started... Please wait.")
-            
-            # --- Initialize DB and load seen_ids ---
-            init_db()
-            seen_ids = load_seen_ids_db()
-
-            # --- Calculate 10 days before ---
-            to_date = get_date_10_days_before(from_date.strftime("%d/%m/%Y"))
-
-            # --- Open Selenium Chrome driver ---
-            driver = setup_selenium(download_dir="pdfs")
-
-            # --- Navigate to page and take captcha screenshot ---
-            captcha_file = submit_captcha_and_search(driver, from_date, to_date, option)
-            captcha_placeholder.image(captcha_file, caption="Enter CAPTCHA shown above")
-
-            # Wait a little for user to input captcha
-            st.info("Enter the CAPTCHA above and click Extract again.")
-
-            if captcha_input:
-                # Submit CAPTCHA input to page
-                submit_captcha_and_search(driver, from_date, to_date, option, captcha_input=captcha_input)
-
-                # --- Scrape table and download PDFs incrementally ---
-                scraped_data = scrape_results_table(driver, pdfs_dir="pdfs", seen_ids=seen_ids)
-
-                # --- Save scraped data to DB ---
-                save_scraped_data_db(scraped_data)
-
-                driver.quit()
-
-                st.success(f"Scraping completed! {len(scraped_data)} new rows added.")
+        if submit_button:
+            with st.spinner("Submitting CAPTCHA and scraping... This may take a moment."):
+                seen_ids = load_seen_ids_db()
+                submit_captcha_and_search(st.session_state.driver, captcha_text)
+                scraped_data = scrape_results_table(st.session_state.driver, pdfs_dir=PDF_DIR, seen_ids=seen_ids)
+                
                 if scraped_data:
-                    st.download_button(
-                        label="Download CSV of scraped data",
-                        data=open("logs/data.db", "rb").read(),
-                        file_name=f"scraped_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db",
-                        mime="application/octet-stream"
-                    )
+                    st.info("Data scraped. Saving to files...")
+                    save_scraped_data_db(scraped_data)
+                    save_data_to_csv(scraped_data,csv_dir=CSV_DIR)
+                    st.success(f"Scraping complete! {len(scraped_data)} new rows added.")
+                    st.dataframe(scraped_data)
                 else:
-                    st.info("No new data to scrape.")
+                    st.warning("No new data found to scrape.")
+
+                # --- Cleanup ---
+                st.session_state.driver.quit()
+                st.session_state.driver = None
+                st.session_state.captcha_path = None
+                st.session_state.stage = 'initial' # Reset for next run
+                # Keep the success message by not immediately rerunning, or store results in state
+    
+    if st.button("Start Over"):
+        # Cleanup and reset
+        if st.session_state.driver:
+            st.session_state.driver.quit()
+        st.session_state.stage = 'initial'
+        st.session_state.driver = None
+        st.session_state.captcha_path = None
+        st.rerun()
