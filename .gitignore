@@ -5,3 +5,4 @@ pdfs/
 logs/
 *.log
 .env
+scraper_data.db
