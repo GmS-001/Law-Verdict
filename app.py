@@ -30,12 +30,12 @@ if st.session_state.stage == 'initial':
     to_date = st.date_input("Select Date", value=datetime.today())
     from_date = get_date_10_days_before(to_date.strftime("%d/%m/%Y"))
     st.info(f"Scraping from **{from_date}** to **{to_date.strftime('%d/%m/%Y')}**")
-    option = st.radio("Reportable Judgment", ["Yes", "No", "All"])
+    option = st.radio("Select Reportable Judgment", ["Yes", "No", "All"])
     if st.button("Go to Website and Get CAPTCHA"):
         with st.spinner("Opening website..."):
             st.session_state.driver = setup_selenium(download_dir=PDF_DIR)
             st.session_state.captcha_path = open_and_prepare_page(
-                st.session_state.driver, from_date, to_date.strftime("%d/%m/%Y")
+                st.session_state.driver, from_date, to_date.strftime("%d/%m/%Y"),option
             )
             st.session_state.stage = 'captcha_input'
             st.rerun()

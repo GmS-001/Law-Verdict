@@ -51,7 +51,7 @@ def setup_selenium(download_dir: str):
     return driver
 
 
-def open_and_prepare_page(driver, from_date: str, to_date: str) -> str:
+def open_and_prepare_page(driver, from_date: str, to_date: str, reportable_option: str) -> str:
     """
     Open Rajasthan HC website, fill dates, select 'Reportable Judgement',
     and screenshot captcha. Returns captcha image path for user input.
@@ -66,15 +66,23 @@ def open_and_prepare_page(driver, from_date: str, to_date: str) -> str:
     from_date_input.clear()
     from_date_input.send_keys(from_date)
     from_date_input.send_keys(Keys.ENTER)
+    time.sleep(1)
 
     # Fill 'To Date'
     to_date_input = wait.until(EC.presence_of_element_located((By.ID, "partyToDate")))
     to_date_input.clear()
     to_date_input.send_keys(to_date)
     to_date_input.send_keys(Keys.ENTER)
+    time.sleep(1)
 
     # Select 'Reportable Judgement'
-    reportable_judgement = wait.until(EC.presence_of_element_located((By.ID, "rpjudgeA")))
+    if reportable_option == "Yes":
+        element_id = "rpjudgeY"
+    elif reportable_option == "No":
+        element_id = "rpjudgeN"
+    else: 
+        element_id = "rpjudgeA"
+    reportable_judgement = wait.until(EC.presence_of_element_located((By.ID, element_id)))
     reportable_judgement.click()
     time.sleep(2)
 
